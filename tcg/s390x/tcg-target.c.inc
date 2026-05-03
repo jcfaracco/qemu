@@ -254,6 +254,8 @@ typedef enum S390Opcode {
     RXY_LLGF    = 0xe316,
     RXY_LLGH    = 0xe391,
     RXY_LMG     = 0xeb04,
+    RXY_LAA     = 0xebf8,
+    RXY_LAAG    = 0xebe8,
     RXY_LPQ     = 0xe38f,
     RXY_LRV     = 0xe31e,
     RXY_LRVG    = 0xe30f,
@@ -2228,6 +2230,17 @@ static void tcg_out_exit_tb(TCGContext *s, uintptr_t a0)
         tcg_out_movi(s, TCG_TYPE_PTR, TCG_REG_R2, a0);
         tgen_gotoi(s, S390_CC_ALWAYS, tb_ret_addr);
     }
+}
+
+static void tcg_out_inc_exec_count(TCGContext *s, uintptr_t tb_ptr)
+{
+    TCGReg ptr = TCG_TMP0;
+
+    tcg_out_movi(s, TCG_TYPE_PTR, ptr, tb_ptr);
+    tcg_out_movi(s, TCG_TYPE_I32, TCG_REG_R0, 1);
+    /* LAA R0, R0, offsetof(exec_count)(ptr) -- atomically add 1 */
+    tcg_out_insn(s, RXY, LAA, TCG_REG_R0, ptr, TCG_REG_R0,
+                 offsetof(TranslationBlock, exec_count));
 }
 
 static void tcg_out_goto_tb(TCGContext *s, int which)

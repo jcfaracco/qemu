@@ -1705,6 +1705,85 @@
   'features': [ 'unstable' ] }
 
 ##
+# @TCGHotBlock:
+#
+# Information about a hot TCG translation block.
+#
+# @pc: Guest virtual address of the block.
+#
+# @exec-count: Number of times the block has been executed.
+#
+# @size: Size of the guest code in the block (in bytes).
+#
+# @host-size: Size of the generated host code (in bytes).
+#
+# @num-insns: Number of guest instructions in the block.
+#
+# @flags: TCG flags for the block.
+#
+# @vcpu: Index of the vCPU that translated the block.
+#
+# Since: 11.1
+##
+{ 'struct': 'TCGHotBlock',
+  'data': { 'pc': 'uint64',
+            'exec-count': 'uint32',
+            'size': 'uint16',
+            'host-size': 'uint64',
+            'num-insns': 'uint16',
+            'flags': 'uint32',
+            'vcpu': 'int' },
+  'if': 'CONFIG_TCG' }
+
+##
+# @query-tcg-hot-blocks:
+#
+# Query the hottest TCG translation blocks.
+#
+# @top-n: Maximum number of blocks to return (default 20).
+#
+# @vcpu: vCPU index to filter by (optional).
+#
+# @min-exec-count: Minimum execution count threshold (optional).
+#
+# Returns: A list of TCGHotBlock objects.
+#
+# Since: 11.1
+##
+{ 'command': 'query-tcg-hot-blocks',
+  'data': { '*top-n': 'int',
+            '*vcpu': 'int',
+            '*min-exec-count': 'uint32' },
+  'returns': ['TCGHotBlock'],
+  'if': 'CONFIG_TCG' }
+
+##
+# @x-query-tcg-hot-blocks:
+#
+# Query the hottest TCG translation blocks in human readable format.
+#
+# @top-n: Maximum number of blocks to return (default 20).
+#
+# @vcpu: vCPU index to filter by (optional).
+#
+# @min-exec-count: Minimum execution count threshold (optional).
+#
+# Features:
+# @unstable: This command is meant for debugging.
+#
+# Returns: Hot TCG translation blocks statistics.
+#
+# Since: 11.1
+##
+{ 'command': 'x-query-tcg-hot-blocks',
+  'data': { '*top-n': 'int',
+            '*vcpu': 'int',
+            '*min-exec-count': 'uint32' },
+  'returns': 'HumanReadableText',
+  'if': 'CONFIG_TCG',
+  'features': [ 'unstable' ] }
+
+##
 # @x-query-numa:
 #
 # Query NUMA topology information

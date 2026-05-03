@@ -1008,3 +1008,37 @@ Recommended coding rules for best performance
 - Use the 'discard' instruction if you know that TCG won't be able to
   prove that a given global is "dead" at a given program point. The
   x86 guest uses it to improve the condition codes optimisation.
+
+Translation Block Management
+============================
+
+Execution Counters
+------------------
+
+Each ``TranslationBlock`` maintains a 32-bit execution counter (``exec_count``).
+An atomic increment of this counter is emitted in the TB prologue during code
+generation. These counters provide insights into guest code execution frequency,
+enabling hot block profiling and adaptive cache management.
+
+Selective TB Eviction
+---------------------
+
+When the TCG code buffer reaches its capacity, QEMU can perform selective
+eviction of "cold" translation blocks instead of a full global flush.
+
+The eviction process works as follows:
+
+1. **Decay**: All execution counters are periodically halved (right-shifted).
+   This ensures that formerly-hot but currently-unused blocks eventually become
+   candidates for eviction.
+2. **Identification**: TBs with an ``exec_count`` below a specific threshold
+   (default: 10) are identified as cold.
+3. **Invalidation**: Cold TBs are invalidated and unlinked from the jump
+   translation cache and direct jump lists.
+4. **Reclamation**: The space occupied by invalidated TBs is reclaimed. If the
+   selective eviction does not free enough space (minimum 1 MB), a full
+   global flush (``tb_flush``) is performed as a fallback.
+
+This mechanism helps maintain frequently executed code ("hot blocks") in the
+cache, reducing the performance penalty associated with full buffer flushes
+in long-running workloads.

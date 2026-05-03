@@ -56,6 +56,7 @@ void tcg_gen_mb(TCGBar);
  * @idx should be one of the TB_EXIT_ values.
  */
 void tcg_gen_exit_tb(const TranslationBlock *tb, unsigned idx);
+void tcg_gen_inc_exec_count(const TranslationBlock *tb);
 
 /**
  * tcg_gen_goto_tb() - output goto_tb TCG operation

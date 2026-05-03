@@ -369,6 +369,8 @@ static bool tcg_target_const_match(int64_t sval, int ct,
 #define LDUX   XO31( 53)
 #define LWA    XO58(  2)
 #define LWAX   XO31(341)
+#define LWARX  XO31( 20)
+#define STWCX  (XO31(150) | 1)
 #define LQ     OPCD( 56)
 
 #define STB    OPCD( 38)
@@ -2647,6 +2649,26 @@ static void tcg_out_exit_tb(TCGContext *s, uintptr_t arg)
 {
     tcg_out_movi(s, TCG_TYPE_PTR, TCG_REG_R3, arg);
     tcg_out_b(s, 0, tcg_code_gen_epilogue);
+}
+
+static void tcg_out_inc_exec_count(TCGContext *s, uintptr_t tb_ptr)
+{
+    TCGReg ptr = TCG_REG_TMP1;
+    TCGReg val = TCG_REG_R0;
+
+    tcg_out_movi(s, TCG_TYPE_PTR, ptr, tb_ptr + offsetof(TranslationBlock, exec_count));
+
+    /* Loop label */
+    tcg_insn_unit *label = s->code_ptr;
+
+    /* lwarx val, 0, ptr */
+    tcg_out32(s, LWARX | TAB(val, 0, ptr));
+    /* addic val, val, 1 */
+    tcg_out32(s, ADDIC | TAI(val, val, 1));
+    /* stwcx. val, 0, ptr */
+    tcg_out32(s, STWCX | SAB(val, 0, ptr));
+    /* bne label */
+    tcg_out_bc(s, TCG_COND_NE, reloc_pc14_val(tcg_splitwx_to_rx(s->code_ptr), label));
 }
 
 static void tcg_out_goto_tb(TCGContext *s, int which)

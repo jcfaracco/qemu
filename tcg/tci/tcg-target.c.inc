@@ -460,6 +460,11 @@ static void tcg_out_exit_tb(TCGContext *s, uintptr_t arg)
     tcg_out_op_p(s, INDEX_op_exit_tb, (void *)arg);
 }
 
+static void tcg_out_inc_exec_count(TCGContext *s, uintptr_t tb_ptr)
+{
+    tcg_out_op_p(s, INDEX_op_inc_exec_count, (void *)tb_ptr);
+}
+
 static void tcg_out_goto_tb(TCGContext *s, int which)
 {
     /* indirect jump method. */

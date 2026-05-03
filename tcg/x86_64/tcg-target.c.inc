@@ -2347,6 +2347,15 @@ static void tcg_out_exit_tb(TCGContext *s, uintptr_t a0)
     }
 }
 
+static void tcg_out_inc_exec_count(TCGContext *s, uintptr_t tb_ptr)
+{
+    /* lock incl offset(%rax) */
+    tcg_out_movi(s, TCG_TYPE_PTR, TCG_REG_RAX, tb_ptr);
+    tcg_out8(s, 0xf0); /* lock prefix */
+    tcg_out_modrm_offset(s, OPC_GRP5, EXT5_INC_Ev, TCG_REG_RAX,
+                         offsetof(TranslationBlock, exec_count));
+}
+
 static void tcg_out_goto_tb(TCGContext *s, int which)
 {
     /*

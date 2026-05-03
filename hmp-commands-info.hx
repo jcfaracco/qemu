@@ -249,11 +249,20 @@ ERST
         .params     = "",
         .help       = "show dynamic compiler info",
     },
+    {
+        .name       = "tcg-hot-blocks",
+        .args_type  = "",
+        .params     = "",
+        .help       = "show hottest TCG translation blocks",
+    },
 #endif
 
 SRST
   ``info jit``
     Show dynamic compiler info.
+
+  ``info tcg-hot-blocks``
+    Show hottest TCG translation blocks.
 ERST
 
     {

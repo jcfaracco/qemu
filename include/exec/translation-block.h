@@ -94,6 +94,9 @@ struct TranslationBlock {
     /* size of target code for this block (1 <= size <= TARGET_PAGE_SIZE) */
     uint16_t size;
     uint16_t icount;
+    uint32_t exec_count;
+    uint32_t total_host_size;
+    int creator_vcpu;
 
     struct tb_tc tc;
 
@@ -212,6 +215,7 @@ static inline void tb_set_page_addr1(TranslationBlock *tb,
 
 /* TranslationBlock invalidate API */
 void tb_invalidate_phys_range(CPUState *cpu, tb_page_addr_t start,
-                              tb_page_addr_t last);
-
+                               tb_page_addr_t last);
+void tb_decay_all_counters(void);
+size_t tb_evict_cold(uint32_t threshold);
 #endif /* EXEC_TRANSLATION_BLOCK_H */

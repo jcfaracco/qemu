@@ -49,6 +49,7 @@
 struct tcg_region_tree {
     QemuMutex lock;
     QTree *tree;
+    GQueue free_tb_blocks;
     /* padding to avoid false sharing is computed at run-time */
 };
 
@@ -188,6 +189,7 @@ static void tcg_region_trees_init(void)
 
         qemu_mutex_init(&rt->lock);
         rt->tree = q_tree_new_full(tb_tc_cmp, NULL, NULL, tb_destroy);
+        g_queue_init(&rt->free_tb_blocks);
     }
 }
 
@@ -230,6 +232,47 @@ void tcg_tb_insert(TranslationBlock *tb)
     qemu_mutex_unlock(&rt->lock);
 }
 
+void tcg_region_push_free_block(void *ptr, size_t size)
+{
+    struct tcg_region_tree *rt = tc_ptr_to_region_tree(ptr);
+
+    if (rt && size > 0) {
+        struct TCGFreeBlock *block = g_new0(struct TCGFreeBlock, 1);
+        block->start = ptr;
+        block->size = size;
+        qemu_mutex_lock(&rt->lock);
+        g_queue_push_tail(&rt->free_tb_blocks, block);
+        qemu_mutex_unlock(&rt->lock);
+    }
+}
+
+struct TCGFreeBlock *tcg_region_pop_free_block(TCGContext *s, size_t min_size)
+{
+    size_t i;
+
+    for (i = 0; i < region.n; i++) {
+        struct tcg_region_tree *rt = region_trees + i * tree_size;
+        struct TCGFreeBlock *found = NULL;
+        GList *l;
+
+        qemu_mutex_lock(&rt->lock);
+        for (l = rt->free_tb_blocks.head; l; l = l->next) {
+            struct TCGFreeBlock *block = l->data;
+            if (block->size >= min_size) {
+                found = block;
+                g_queue_delete_link(&rt->free_tb_blocks, l);
+                break;
+            }
+        }
+        qemu_mutex_unlock(&rt->lock);
+
+        if (found) {
+            return found;
+        }
+    }
+    return NULL;
+}
+
 void tcg_tb_remove(TranslationBlock *tb)
 {
     struct tcg_region_tree *rt = tc_ptr_to_region_tree(tb->tc.ptr);
@@ -238,6 +281,10 @@ void tcg_tb_remove(TranslationBlock *tb)
     qemu_mutex_lock(&rt->lock);
     q_tree_remove(rt->tree, &tb->tc);
     qemu_mutex_unlock(&rt->lock);
+
+    if (tb->total_host_size > 0) {
+        tcg_region_push_free_block(tb, tb->total_host_size);
+    }
 }
 
 /*
@@ -322,6 +369,10 @@ static void tcg_region_tree_reset_all(void)
         /* Increment the refcount first so that destroy acts as a reset */
         q_tree_ref(rt->tree);
         q_tree_destroy(rt->tree);
+
+        while (!g_queue_is_empty(&rt->free_tb_blocks)) {
+            g_free(g_queue_pop_head(&rt->free_tb_blocks));
+        }
     }
     tcg_region_tree_unlock_all();
 }

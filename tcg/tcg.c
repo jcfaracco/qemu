@@ -133,6 +133,7 @@ static void tcg_out_extrl_i64_i32(TCGContext *s, TCGReg ret, TCGReg arg);
 static void tcg_out_addi_ptr(TCGContext *s, TCGReg, TCGReg, tcg_target_long);
 static bool tcg_out_xchg(TCGContext *s, TCGType type, TCGReg r1, TCGReg r2);
 static void tcg_out_exit_tb(TCGContext *s, uintptr_t arg);
+static void tcg_out_inc_exec_count(TCGContext *s, uintptr_t tb_ptr);
 static void tcg_out_goto_tb(TCGContext *s, int which);
 static void tcg_out_goto_ptr(TCGContext *s, TCGReg dest);
 static void tcg_out_mb(TCGContext *s, unsigned bar);
@@ -1835,6 +1836,26 @@ TranslationBlock *tcg_tb_alloc(TCGContext *s)
     next = (void *)ROUND_UP((uintptr_t)(tb + 1), align);
 
     if (unlikely(next > s->code_gen_highwater)) {
+        if (s->main_code_gen_ptr) {
+            /* We were in a hole and it's full. Go back to main buffer. */
+            s->code_gen_ptr = s->main_code_gen_ptr;
+            s->code_gen_highwater = s->main_code_gen_highwater;
+            s->main_code_gen_ptr = NULL;
+            s->main_code_gen_highwater = NULL;
+            goto retry;
+        }
+
+        /* Try to find a hole before allocating a new region */
+        struct TCGFreeBlock *hole = tcg_region_pop_free_block(s, 16 * 1024);
+        if (hole) {
+            s->main_code_gen_ptr = s->code_gen_ptr;
+            s->main_code_gen_highwater = s->code_gen_highwater;
+            s->code_gen_ptr = hole->start;
+            s->code_gen_highwater = hole->start + hole->size - TCG_HIGHWATER;
+            g_free(hole);
+            goto retry;
+        }
+
         if (tcg_region_alloc(s)) {
             return NULL;
         }
@@ -6705,6 +6726,9 @@ int tcg_gen_code(TCGContext *s, TranslationBlock *tb, uint64_t pc_start)
             break;
         case INDEX_op_exit_tb:
             tcg_out_exit_tb(s, op->args[0]);
+            break;
+        case INDEX_op_inc_exec_count:
+            tcg_out_inc_exec_count(s, op->args[0]);
             break;
         case INDEX_op_goto_tb:
             tcg_out_goto_tb(s, op->args[0]);

@@ -381,6 +381,10 @@ struct TCGContext {
     /* Threshold to flush the translated code buffer.  */
     void *code_gen_highwater;
 
+    /* Main buffer pointers, used when diverting to a hole */
+    void *main_code_gen_ptr;
+    void *main_code_gen_highwater;
+
     /* Track which vCPU triggers events */
     CPUState *cpu;                      /* *_trans */
 
@@ -438,6 +442,11 @@ struct TCGContext {
 
     /* Exit to translator on overflow. */
     sigjmp_buf jmp_trans;
+};
+
+struct TCGFreeBlock {
+    void *start;
+    size_t size;
 };
 
 static inline bool temp_readonly(TCGTemp *ts)

@@ -429,6 +429,11 @@ typedef enum {
     /* Load/store exclusive. */
     Istxp_LDXP       = 0xc8600000,
     Istxp_STXP       = 0xc8200000,
+    Ildxr_LDAXR      = 0x085f7c00,
+    Istxr_STLXR      = 0x08007c00,
+
+    /* Atomic (LSE). */
+    Iatomic_LDADDAL  = 0x38e00000,
 
     /* Load/store register.  Described here as 3.3.12, but the helper
        that emits them can transform to 3.3.10 or 3.3.13.  */
@@ -708,6 +713,21 @@ static void tcg_out_insn_branch(TCGContext *s, AArch64Insn insn, int imm26)
 static void tcg_out_insn_bcond_reg(TCGContext *s, AArch64Insn insn, TCGReg rn)
 {
     tcg_out32(s, insn | rn << 5);
+}
+
+static void tcg_out_insn_ldxr(TCGContext *s, AArch64Insn insn, TCGReg rt, TCGReg rn)
+{
+    tcg_out32(s, insn | (rn << 5) | rt);
+}
+
+static void tcg_out_insn_stxr(TCGContext *s, AArch64Insn insn, TCGReg rs, TCGReg rt, TCGReg rn)
+{
+    tcg_out32(s, insn | (rs << 16) | (rn << 5) | rt);
+}
+
+static void tcg_out_insn_atomic(TCGContext *s, AArch64Insn insn, TCGReg rs, TCGReg rt, TCGReg rn)
+{
+    tcg_out32(s, insn | (rs << 16) | (rn << 5) | rt);
 }
 
 static void tcg_out_insn_ldstpair(TCGContext *s, AArch64Insn insn,
@@ -2012,6 +2032,43 @@ static void tcg_out_exit_tb(TCGContext *s, uintptr_t a0)
         QEMU_BUILD_BUG_ON(TCG_REG_TMP0 != TCG_REG_X16);
         tcg_out_movi(s, TCG_TYPE_I64, TCG_REG_TMP0, (intptr_t)target);
         tcg_out_insn(s, bcond_reg, BR, TCG_REG_TMP0);
+    }
+}
+
+static void tcg_out_inc_exec_count(TCGContext *s, uintptr_t tb_ptr)
+{
+    TCGReg ptr = TCG_REG_TMP0;
+    TCGReg val = TCG_REG_TMP1;
+
+    tcg_out_movi(s, TCG_TYPE_PTR, ptr, tb_ptr);
+
+    if (have_lse) {
+        tcg_out_movi(s, TCG_TYPE_I32, val, 1);
+        /* LDADDAL doesn't have offset, so we need to add offset to ptr. */
+        tcg_out_insn(s, addsub_imm, ADDI, TCG_TYPE_I64, ptr, ptr,
+                     offsetof(TranslationBlock, exec_count));
+        tcg_out_insn(s, atomic, LDADDAL, val, TCG_REG_XZR, ptr);
+    } else {
+        /*
+         * Loop:
+         *   LDAXR val, [ptr + offset]
+         *   ADD val, val, 1
+         *   STLXR tmp2, val, [ptr + offset]
+         *   CBNZ tmp2, Loop
+         */
+        tcg_out_insn(s, addsub_imm, ADDI, TCG_TYPE_I64, ptr, ptr,
+                     offsetof(TranslationBlock, exec_count));
+
+        /* Loop label */
+        tcg_insn_unit *label = s->code_ptr;
+
+        tcg_out_insn(s, ldxr, LDAXR, val, ptr);
+        tcg_out_insn(s, addsub_imm, ADDI, TCG_TYPE_I32, val, val, 1);
+        tcg_out_insn(s, stxr, STLXR, TCG_REG_TMP2, val, ptr);
+
+        /* CBNZ TMP2, label */
+        ptrdiff_t offset = tcg_pcrel_diff(s, label) >> 2;
+        tcg_out_insn(s, cbz, CBNZ, 0, TCG_REG_TMP2, offset);
     }
 }
 

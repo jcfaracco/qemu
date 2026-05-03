@@ -1925,6 +1925,17 @@ static void tcg_out_exit_tb(TCGContext *s, uintptr_t a0)
     }
 }
 
+static void tcg_out_inc_exec_count(TCGContext *s, uintptr_t tb_ptr)
+{
+    TCGReg ptr = TCG_REG_TMP0;
+    TCGReg val = TCG_REG_TMP1;
+
+    tcg_out_movi(s, TCG_TYPE_PTR, ptr, tb_ptr + offsetof(TranslationBlock, exec_count));
+    tcg_out_movi(s, TCG_TYPE_I32, val, 1);
+    /* amoadd.w zero, val, (ptr) */
+    tcg_out32(s, 0x0000202f | (ptr << 15) | (val << 20));
+}
+
 static void tcg_out_goto_tb(TCGContext *s, int which)
 {
     /* Direct branch will be patched by tb_target_set_jmp_target. */

@@ -13,6 +13,25 @@
 #include "exec/translation-block.h"
 #include "exec/mmap-lock.h"
 #include "accel/tcg/tb-cpu-state.h"
+#include "accel/accel-ops.h"
+#include "qapi/qapi-types-common.h"
+
+struct TCGState {
+    AccelState parent_obj;
+
+    OnOffAuto mttcg_enabled;
+    bool one_insn_per_tb;
+    int splitwx_enabled;
+    unsigned long tb_size;
+    uint32_t cold_threshold;
+    size_t min_reclaim_size;
+};
+typedef struct TCGState TCGState;
+
+#define TYPE_TCG_ACCEL ACCEL_CLASS_NAME("tcg")
+
+DECLARE_INSTANCE_CHECKER(TCGState, TCG_STATE,
+                         TYPE_TCG_ACCEL)
 
 extern int64_t max_delay;
 extern int64_t max_advance;

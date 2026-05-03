@@ -288,17 +288,24 @@ TranslationBlock *tb_gen_code(CPUState *cpu, TCGTBCPUState s)
     assert_no_pages_locked();
     tb = tcg_tb_alloc(tcg_ctx);
     if (unlikely(!tb)) {
-        /* flush must be done */
+        /* Try selective eviction before a full flush */
         if (cpu_in_serial_context(cpu)) {
-            trace_tb_gen_code_buffer_overflow("tcg_tb_alloc");
-            tb_flush__exclusive_or_serial();
-            goto buffer_overflow;
+            TCGState *t_accel = TCG_STATE(current_accel());
+            size_t reclaimed = tb_evict_cold(t_accel->cold_threshold);
+            if (reclaimed >= t_accel->min_reclaim_size) {
+                tb = tcg_tb_alloc(tcg_ctx);
+            }
+            if (!tb) {
+                trace_tb_gen_code_buffer_overflow("tcg_tb_alloc");
+                tb_flush__exclusive_or_serial();
+                goto buffer_overflow;
+            }
+        } else {
+            queue_tb_flush(cpu);
+            mmap_unlock();
+            cpu->exception_index = EXCP_INTERRUPT;
+            cpu_loop_exit(cpu);
         }
-        queue_tb_flush(cpu);
-        mmap_unlock();
-        /* Make the execution loop process the flush as soon as possible.  */
-        cpu->exception_index = EXCP_INTERRUPT;
-        cpu_loop_exit(cpu);
     }
 
     gen_code_buf = tcg_ctx->code_gen_ptr;
@@ -309,6 +316,8 @@ TranslationBlock *tb_gen_code(CPUState *cpu, TCGTBCPUState s)
     tb->cs_base = s.cs_base;
     tb->flags = s.flags;
     tb->cflags = s.cflags;
+    tb->exec_count = 0;
+    tb->creator_vcpu = cpu->cpu_index;
     tb_set_page_addr0(tb, phys_pc);
     tb_set_page_addr1(tb, -1);
     if (phys_pc != -1) {
@@ -395,6 +404,9 @@ TranslationBlock *tb_gen_code(CPUState *cpu, TCGTBCPUState s)
         goto buffer_overflow;
     }
     tb->tc.size = gen_code_size;
+    tb->total_host_size = (void *)ROUND_UP((uintptr_t)gen_code_buf +
+                                           gen_code_size + search_size,
+                                           CODE_GEN_ALIGN) - (void *)tb;
 
     /*
      * For CF_PCREL, attribute all executions of the generated code
@@ -534,6 +546,7 @@ TranslationBlock *tb_gen_code(CPUState *cpu, TCGTBCPUState s)
 
         orig_aligned -= ROUND_UP(sizeof(*tb), qemu_icache_linesize);
         qatomic_set(&tcg_ctx->code_gen_ptr, (void *)orig_aligned);
+        tb->total_host_size = 0;
         tcg_tb_remove(tb);
         return existing_tb;
     }

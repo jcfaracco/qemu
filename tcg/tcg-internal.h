@@ -27,6 +27,9 @@
 
 #include "tcg/helper-info.h"
 
+struct TCGFreeBlock;
+typedef struct TCGContext TCGContext;
+
 #define TCG_HIGHWATER 1024
 
 extern TCGContext tcg_init_ctx;
@@ -44,6 +47,8 @@ void tcg_region_init(size_t tb_size, int splitwx, unsigned max_threads);
 bool tcg_region_alloc(TCGContext *s);
 void tcg_region_initial_alloc(TCGContext *s);
 void tcg_region_prologue_set(TCGContext *s);
+void tcg_region_push_free_block(void *ptr, size_t size);
+struct TCGFreeBlock *tcg_region_pop_free_block(TCGContext *s, size_t min_size);
 
 static inline void *tcg_call_func(TCGOp *op)
 {

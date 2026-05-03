@@ -46,22 +46,6 @@
 #include "accel/tcg/cpu-ops.h"
 #include "internal-common.h"
 
-
-struct TCGState {
-    AccelState parent_obj;
-
-    OnOffAuto mttcg_enabled;
-    bool one_insn_per_tb;
-    int splitwx_enabled;
-    unsigned long tb_size;
-};
-typedef struct TCGState TCGState;
-
-#define TYPE_TCG_ACCEL ACCEL_CLASS_NAME("tcg")
-
-DECLARE_INSTANCE_CHECKER(TCGState, TCG_STATE,
-                         TYPE_TCG_ACCEL)
-
 #ifndef CONFIG_USER_ONLY
 bool qemu_tcg_mttcg_enabled(void)
 {
@@ -69,6 +53,8 @@ bool qemu_tcg_mttcg_enabled(void)
     return s->mttcg_enabled == ON_OFF_AUTO_ON;
 }
 #endif /* !CONFIG_USER_ONLY */
+
+bool one_insn_per_tb;
 
 static void tcg_accel_instance_init(Object *obj)
 {
@@ -80,9 +66,57 @@ static void tcg_accel_instance_init(Object *obj)
 #else
     s->splitwx_enabled = 0;
 #endif
+    s->cold_threshold = 10;
+    s->min_reclaim_size = 1 * MiB;
 }
 
-bool one_insn_per_tb;
+static void tcg_get_cold_threshold(Object *obj, Visitor *v,
+                                   const char *name, void *opaque,
+                                   Error **errp)
+{
+    TCGState *s = TCG_STATE(obj);
+    uint32_t value = s->cold_threshold;
+
+    visit_type_uint32(v, name, &value, errp);
+}
+
+static void tcg_set_cold_threshold(Object *obj, Visitor *v,
+                                   const char *name, void *opaque,
+                                   Error **errp)
+{
+    TCGState *s = TCG_STATE(obj);
+    uint32_t value;
+
+    if (!visit_type_uint32(v, name, &value, errp)) {
+        return;
+    }
+
+    s->cold_threshold = value;
+}
+
+static void tcg_get_min_reclaim_size(Object *obj, Visitor *v,
+                                     const char *name, void *opaque,
+                                     Error **errp)
+{
+    TCGState *s = TCG_STATE(obj);
+    uint64_t value = s->min_reclaim_size;
+
+    visit_type_uint64(v, name, &value, errp);
+}
+
+static void tcg_set_min_reclaim_size(Object *obj, Visitor *v,
+                                     const char *name, void *opaque,
+                                     Error **errp)
+{
+    TCGState *s = TCG_STATE(obj);
+    uint64_t value;
+
+    if (!visit_type_uint64(v, name, &value, errp)) {
+        return;
+    }
+
+    s->min_reclaim_size = value;
+}
 
 #ifndef CONFIG_USER_ONLY
 static void tcg_vm_change_state(void *opaque, bool running, RunState state)
@@ -277,6 +311,18 @@ static void tcg_accel_class_init(ObjectClass *oc, const void *data)
         NULL, NULL);
     object_class_property_set_description(oc, "tb-size",
         "TCG translation block cache size");
+
+    object_class_property_add(oc, "cold-threshold", "uint32",
+        tcg_get_cold_threshold, tcg_set_cold_threshold,
+        NULL, NULL);
+    object_class_property_set_description(oc, "cold-threshold",
+        "Threshold for selective TB eviction (default 10)");
+
+    object_class_property_add(oc, "min-reclaim-size", "size",
+        tcg_get_min_reclaim_size, tcg_set_min_reclaim_size,
+        NULL, NULL);
+    object_class_property_set_description(oc, "min-reclaim-size",
+        "Minimum space to reclaim during selective eviction (default 1MB)");
 
     object_class_property_add_bool(oc, "split-wx",
         tcg_get_splitwx, tcg_set_splitwx);

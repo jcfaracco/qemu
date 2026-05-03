@@ -232,6 +232,8 @@ typedef enum {
     OPC_SWR      = 056 << 26,
     OPC_LD       = 067 << 26,
     OPC_SD       = 077 << 26,
+    OPC_LL       = 060 << 26,
+    OPC_SC       = 070 << 26,
 
     OPC_SPECIAL  = 000 << 26,
     OPC_SLL      = OPC_SPECIAL | 000,
@@ -1416,6 +1418,25 @@ static void tcg_out_exit_tb(TCGContext *s, uintptr_t a0)
     }
     /* delay slot */
     tcg_out_opc_imm(s, OPC_DADDIU, TCG_REG_V0, base, lo);
+}
+
+static void tcg_out_inc_exec_count(TCGContext *s, uintptr_t tb_ptr)
+{
+    TCGReg ptr = TCG_TMP0;
+    TCGReg val = TCG_TMP1;
+
+    tcg_out_movi(s, TCG_TYPE_PTR, ptr,
+                 tb_ptr + offsetof(TranslationBlock, exec_count));
+
+    /* LL/SC retry loop */
+    tcg_insn_unit *label = s->code_ptr;
+    tcg_out_opc_imm(s, OPC_LL, val, ptr, 0);
+    tcg_out_opc_imm(s, OPC_ADDIU, val, val, 1);
+    tcg_out_opc_imm(s, OPC_SC, val, ptr, 0);
+    /* BEQ val, $zero, label -- retry if SC failed */
+    ptrdiff_t disp = label - (s->code_ptr + 1);
+    tcg_out_opc_imm(s, OPC_BEQ, val, TCG_REG_ZERO, disp & 0xffff);
+    tcg_out_nop(s);
 }
 
 static void tcg_out_goto_tb(TCGContext *s, int which)

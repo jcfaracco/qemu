@@ -20,6 +20,7 @@
 #include "qemu/osdep.h"
 #include "tcg/tcg.h"
 #include "tcg/helper-info.h"
+#include "exec/translation-block.h"
 #include "tcg/tcg-ldst.h"
 #include "disas/dis-asm.h"
 #include "tcg-has.h"
@@ -733,6 +734,11 @@ uintptr_t QEMU_DISABLE_CFI tcg_qemu_tb_exec(CPUArchState *env,
             tci_args_l(insn, tb_ptr, &ptr);
             return (uintptr_t)ptr;
 
+        case INDEX_op_inc_exec_count:
+            tci_args_l(insn, tb_ptr, &ptr);
+            qatomic_inc(&((TranslationBlock *)ptr)->exec_count);
+            break;
+
         case INDEX_op_goto_tb:
             tci_args_l(insn, tb_ptr, &ptr);
             tb_ptr = *(void **)ptr;
@@ -852,6 +858,7 @@ int print_insn_tci(bfd_vma addr, disassemble_info *info)
     case INDEX_op_br:
     case INDEX_op_exit_tb:
     case INDEX_op_goto_tb:
+    case INDEX_op_inc_exec_count:
         tci_args_l(insn, tb_ptr, &ptr);
         info->fprintf_func(info->stream, "%-12s  %p", op_name, ptr);
         break;

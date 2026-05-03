@@ -947,6 +947,9 @@ static void do_tb_phys_invalidate(TranslationBlock *tb, bool rm_from_page_list)
     /* remove the TB from the hash list */
     tb_jmp_cache_inval_tb(tb);
 
+    /* remove the TB from the region tree and reclaim its space */
+    tcg_tb_remove(tb);
+
     /* suppress this TB from the two jump lists */
     tb_remove_from_jmp_list(tb, 0);
     tb_remove_from_jmp_list(tb, 1);
@@ -956,6 +959,52 @@ static void do_tb_phys_invalidate(TranslationBlock *tb, bool rm_from_page_list)
 
     qatomic_set(&tb_ctx.tb_phys_invalidate_count,
                 tb_ctx.tb_phys_invalidate_count + 1);
+}
+
+static void tb_decay_counter(void *p, uint32_t hash, void *userp)
+{
+    TranslationBlock *tb = p;
+    qatomic_set(&tb->exec_count, tb->exec_count >> 1);
+}
+
+void tb_decay_all_counters(void)
+{
+    qht_iter(&tb_ctx.htable, tb_decay_counter, NULL);
+}
+
+struct cold_tb_ctx {
+    uint32_t threshold;
+    GPtrArray *cold_tbs;
+};
+
+static void collect_cold_tb(void *p, uint32_t hash, void *userp)
+{
+    TranslationBlock *tb = p;
+    struct cold_tb_ctx *ctx = userp;
+
+    if (tb->exec_count < ctx->threshold) {
+        g_ptr_array_add(ctx->cold_tbs, tb);
+    }
+}
+
+size_t tb_evict_cold(uint32_t threshold)
+{
+    g_autoptr(GPtrArray) cold_tbs = g_ptr_array_new();
+    struct cold_tb_ctx ctx = { .threshold = threshold, .cold_tbs = cold_tbs };
+    size_t reclaimed = 0;
+    int i;
+
+    tb_decay_all_counters();
+
+    qht_iter(&tb_ctx.htable, collect_cold_tb, &ctx);
+
+    for (i = 0; i < cold_tbs->len; i++) {
+        TranslationBlock *tb = g_ptr_array_index(cold_tbs, i);
+        reclaimed += tb->tc.size;
+        tb_phys_invalidate(tb, -1);
+    }
+
+    return reclaimed;
 }
 
 static void tb_phys_invalidate__locked(TranslationBlock *tb)

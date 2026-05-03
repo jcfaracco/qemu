@@ -258,6 +258,8 @@ static TCGReg tcg_target_call_oarg_reg(TCGCallReturnKind kind, int slot)
 #define STXA       (INSN_OP(3) | INSN_OP3(0x1e))
 
 #define MEMBAR     (INSN_OP(2) | INSN_OP3(0x28) | INSN_RS1(15) | (1 << 13))
+#define CASA       (INSN_OP(3) | INSN_OP3(0x3c))
+#define ASI_PRIMARY 0x80
 
 #define NOP        (SETHI | INSN_RD(TCG_REG_G0) | 0)
 
@@ -1295,6 +1297,34 @@ static void tcg_out_exit_tb(TCGContext *s, uintptr_t a0)
     tcg_out_movi(s, TCG_TYPE_PTR, TCG_REG_I0, a0 & ~0x3ff);
     tcg_out_arithi(s, TCG_REG_G0, TCG_REG_I7, 8, RETURN);
     tcg_out_arithi(s, TCG_REG_O0, TCG_REG_O0, a0 & 0x3ff, ARITH_OR);
+}
+
+static void tcg_out_inc_exec_count(TCGContext *s, uintptr_t tb_ptr)
+{
+    TCGReg ptr = TCG_REG_T1;
+    TCGReg old = TCG_REG_T2;
+    TCGReg new = TCG_REG_T3;
+
+    tcg_out_movi(s, TCG_TYPE_PTR, ptr,
+                 tb_ptr + offsetof(TranslationBlock, exec_count));
+
+    /*
+     * CAS retry loop:
+     *   LDUW  old, [ptr]
+     *   ADD   new, old, 1
+     *   CASA  [ptr] ASI_PRIMARY, old, new
+     *   CMP   old, new
+     *   BNE   loop
+     */
+    tcg_insn_unit *label = s->code_ptr;
+    tcg_out_ldst(s, old, ptr, 0, LDUW);
+    tcg_out_arithi(s, new, old, 1, ARITH_ADD);
+    /* CASA [ptr] ASI_PRIMARY, old, new */
+    tcg_out32(s, CASA | INSN_RD(new) | INSN_RS1(ptr)
+              | INSN_ASI(ASI_PRIMARY) | INSN_RS2(old));
+    tcg_out_arith(s, TCG_REG_G0, old, new, ARITH_SUBCC);
+    tcg_out_bpcc0(s, COND_NE, BPCC_PN, label - s->code_ptr);
+    tcg_out_nop(s);
 }
 
 static void tcg_out_goto_tb(TCGContext *s, int which)

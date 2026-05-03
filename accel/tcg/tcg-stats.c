@@ -105,7 +105,22 @@ struct tb_tree_stats {
     size_t direct_jmp_count;
     size_t direct_jmp2_count;
     size_t cross_page;
+    uint64_t exec_dist[5];
+    GArray *exec_counts;
 };
+
+static gint compare_uint32(gconstpointer a, gconstpointer b)
+{
+    uint32_t va = *(const uint32_t *)a;
+    uint32_t vb = *(const uint32_t *)b;
+
+    if (va > vb) {
+        return -1;
+    } else if (va < vb) {
+        return 1;
+    }
+    return 0;
+}
 
 static gboolean tb_tree_stats_iter(gpointer key, gpointer value, gpointer data)
 {
@@ -129,6 +144,23 @@ static gboolean tb_tree_stats_iter(gpointer key, gpointer value, gpointer data)
             tst->direct_jmp2_count++;
         }
     }
+
+    if (tb->exec_count <= 1) {
+        tst->exec_dist[0]++;
+    } else if (tb->exec_count <= 10) {
+        tst->exec_dist[1]++;
+    } else if (tb->exec_count <= 100) {
+        tst->exec_dist[2]++;
+    } else if (tb->exec_count <= 1000) {
+        tst->exec_dist[3]++;
+    } else {
+        tst->exec_dist[4]++;
+    }
+
+    if (tst->exec_counts) {
+        g_array_append_val(tst->exec_counts, tb->exec_count);
+    }
+
     return false;
 }
 
@@ -168,6 +200,12 @@ static void dump_exec_info(GString *buf)
     struct qht_stats hst;
     size_t nb_tbs;
 
+    nb_tbs = tcg_nb_tbs();
+    if (nb_tbs) {
+        tst.exec_counts = g_array_sized_new(FALSE, FALSE, sizeof(uint32_t),
+                                           nb_tbs);
+    }
+
     tcg_tb_foreach(tb_tree_stats_iter, &tst);
     nb_tbs = tst.nb_tbs;
     /* XXX: avoid using doubles ? */
@@ -197,6 +235,32 @@ static void dump_exec_info(GString *buf)
                            nb_tbs ? (tst.direct_jmp_count * 100) / nb_tbs : 0,
                            tst.direct_jmp2_count,
                            nb_tbs ? (tst.direct_jmp2_count * 100) / nb_tbs : 0);
+
+    g_string_append_printf(buf, "Execution distribution:\n");
+    g_string_append_printf(buf, "  1x:                %"PRIu64"\n", tst.exec_dist[0]);
+    g_string_append_printf(buf, "  2-10x:             %"PRIu64"\n", tst.exec_dist[1]);
+    g_string_append_printf(buf, "  11-100x:           %"PRIu64"\n", tst.exec_dist[2]);
+    g_string_append_printf(buf, "  101-1000x:         %"PRIu64"\n", tst.exec_dist[3]);
+    g_string_append_printf(buf, "  1001x+:            %"PRIu64"\n", tst.exec_dist[4]);
+
+    if (tst.exec_counts) {
+        uint64_t total_exec = 0;
+        uint64_t top10_exec = 0;
+        size_t top10_count = nb_tbs / 10;
+        size_t i;
+
+        g_array_sort(tst.exec_counts, compare_uint32);
+        for (i = 0; i < tst.exec_counts->len; i++) {
+            uint32_t count = g_array_index(tst.exec_counts, uint32_t, i);
+            total_exec += count;
+            if (i < top10_count) {
+                top10_exec += count;
+            }
+        }
+        g_string_append_printf(buf, "Hot TB ratio (top 10%%): %0.1f%%\n",
+                               total_exec ? (double)top10_exec * 100 / total_exec : 0.0);
+        g_array_free(tst.exec_counts, TRUE);
+    }
 
     qht_statistics_init(&tb_ctx.htable, &hst);
     print_qht_statistics(hst, buf);

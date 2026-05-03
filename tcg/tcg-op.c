@@ -2538,6 +2538,12 @@ void tcg_gen_exit_tb(const TranslationBlock *tb, unsigned idx)
     tcg_gen_op1i(INDEX_op_exit_tb, 0, val);
 }
 
+void tcg_gen_inc_exec_count(const TranslationBlock *tb)
+{
+    uintptr_t val = (uintptr_t)tcg_splitwx_to_rx((void *)tb);
+    tcg_gen_op1i(INDEX_op_inc_exec_count, 0, val);
+}
+
 void tcg_gen_goto_tb(unsigned idx)
 {
     /* We tested CF_NO_GOTO_TB in translator_use_goto_tb. */
