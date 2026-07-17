@@ -88,6 +88,11 @@ void tcg_gen_lookup_and_goto_ptr(void);
 void tcg_gen_plugin_cb(unsigned from);
 void tcg_gen_plugin_mem_cb(TCGv_i64 addr, unsigned meminfo);
 
+void tcg_gen_shadow_ld(TCGv_i64 ret, TCGv_i64 addr, TCGArg tag);
+void tcg_gen_shadow_st(TCGv_i64 addr, TCGv_i64 val, TCGArg tag);
+void tcg_gen_shadow_prop(TCGv_i64 addr, TCGv_i64 val, TCGArg tag);
+
+
 /* 32 bit ops */
 
 void tcg_gen_movi_i32(TCGv_i32 ret, int32_t arg);

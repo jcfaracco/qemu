@@ -26,6 +26,7 @@ system_ss.add(files(
   'runstate.c',
   'tpm-hmp-cmds.c',
   'watchpoint.c',
+  'shadow-memory.c',
 ))
 
 if have_tpm

@@ -71,13 +71,15 @@
 #define TLB_NOTDIRTY         (1 << 7)
 /* Set if the slow path must be used; more flags in CPUTLBEntryFull. */
 #define TLB_FORCE_SLOW       (1 << 8)
+/* Set if shadow memory monitoring is active for this page. */
+#define TLB_SHADOW_ACTIVE    (1 << 9)
 
 /*
  * Use this mask to check interception with an alignment mask
  * in a TCG backend.
  */
 #define TLB_FLAGS_MASK \
-    (TLB_INVALID_MASK | TLB_NOTDIRTY | TLB_FORCE_SLOW)
+    (TLB_INVALID_MASK | TLB_NOTDIRTY | TLB_FORCE_SLOW | TLB_SHADOW_ACTIVE)
 
 /* The two sets of flags must not overlap. */
 QEMU_BUILD_BUG_ON(TLB_FLAGS_MASK & TLB_SLOW_FLAGS_MASK);

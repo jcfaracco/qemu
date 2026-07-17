@@ -2357,6 +2357,11 @@ bool tcg_op_supported(TCGOpcode op, TCGType type, unsigned flags)
         tcg_debug_assert(type == TCG_TYPE_I128);
         goto do_lookup;
 
+    case INDEX_op_shadow_ld:
+    case INDEX_op_shadow_st:
+    case INDEX_op_shadow_prop:
+        return false;
+
     case INDEX_op_add:
     case INDEX_op_and:
     case INDEX_op_brcond:

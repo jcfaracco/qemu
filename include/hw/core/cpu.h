@@ -255,6 +255,14 @@ struct CPUTLBEntryFull {
      */
     union {
         /*
+         * Generic security attributes and shadow memory tracking.
+         */
+        struct {
+            uint32_t security_flags;
+            uintptr_t shadow_addend;
+        } generic;
+
+        /*
          * Cache the attrs and shareability fields from the page table entry.
          *
          * For ARMMMUIdx_Stage2*, pte_attrs is the S2 descriptor bits [5:2].

@@ -2620,3 +2620,33 @@ void tcg_gen_lookup_and_goto_ptr(void)
     tcg_gen_op1i(INDEX_op_goto_ptr, TCG_TYPE_PTR, tcgv_ptr_arg(ptr));
     tcg_temp_free_ptr(ptr);
 }
+
+void tcg_gen_shadow_ld(TCGv_i64 ret, TCGv_i64 addr, TCGArg tag)
+{
+    if (tcg_op_supported(INDEX_op_shadow_ld, TCG_TYPE_I64, 0)) {
+        tcg_gen_op3(INDEX_op_shadow_ld, TCG_TYPE_I64, tcgv_i64_arg(ret), tcgv_i64_arg(addr), tag);
+    } else {
+        TCGv_i32 ttag = tcg_constant_i32(tag);
+        gen_helper_shadow_ld(ret, tcg_env, addr, ttag);
+    }
+}
+
+void tcg_gen_shadow_st(TCGv_i64 addr, TCGv_i64 val, TCGArg tag)
+{
+    if (tcg_op_supported(INDEX_op_shadow_st, TCG_TYPE_I64, 0)) {
+        tcg_gen_op3(INDEX_op_shadow_st, 0, tcgv_i64_arg(addr), tcgv_i64_arg(val), tag);
+    } else {
+        TCGv_i32 ttag = tcg_constant_i32(tag);
+        gen_helper_shadow_st(tcg_env, addr, val, ttag);
+    }
+}
+
+void tcg_gen_shadow_prop(TCGv_i64 addr, TCGv_i64 val, TCGArg tag)
+{
+    if (tcg_op_supported(INDEX_op_shadow_prop, TCG_TYPE_I64, 0)) {
+        tcg_gen_op3(INDEX_op_shadow_prop, 0, tcgv_i64_arg(addr), tcgv_i64_arg(val), tag);
+    } else {
+        TCGv_i32 ttag = tcg_constant_i32(tag);
+        gen_helper_shadow_prop(tcg_env, addr, val, ttag);
+    }
+}

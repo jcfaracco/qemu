@@ -54,6 +54,37 @@
 #include "tcg/tcg-ldst.h"
 #include "backend-ldst.h"
 
+#include "exec/tlb-security.h"
+
+static void default_tlb_security_handler(CPUState *cpu, vaddr addr,
+                                         uint32_t flags, MMUAccessType access_type)
+{
+    qemu_log_mask(LOG_GUEST_ERROR, "TLB Security hit: addr=0x%" VADDR_PRIx
+                  " flags=0x%x access_type=%d\n", addr, flags, access_type);
+}
+
+tlb_security_handler_t tlb_security_handler = default_tlb_security_handler;
+tlb_security_policy_cb tlb_security_policy = NULL;
+
+void tlb_set_security_handler(tlb_security_handler_t handler)
+{
+    tlb_security_handler = handler ? handler : default_tlb_security_handler;
+}
+
+void tlb_set_security_policy(tlb_security_policy_cb policy)
+{
+    tlb_security_policy = policy;
+}
+
+void tlb_set_page_security_flags(CPUState *cpu, vaddr addr, uint32_t flags)
+{
+    /* 
+     * To apply flags, we flush the page from the TLB.
+     * The next access will trigger a TLB miss, tlb_fill, and our policy callback.
+     */
+    tlb_flush_page(cpu, addr);
+}
+
 
 /* DEBUG defines, enable DEBUG_TLB_LOG to log to the CPU_LOG_MMU target */
 /* #define DEBUG_TLB */
@@ -1001,6 +1032,10 @@ static inline void tlb_set_compare(CPUTLBEntryFull *full, CPUTLBEntry *ent,
                                    MMUAccessType access_type, bool enable)
 {
     if (enable) {
+        /* If the page has active security attributes, inject the mismatch flag */
+        if (full->extra.generic.security_flags) {
+            address |= TLB_SHADOW_ACTIVE;
+        }
         address |= flags & TLB_FLAGS_MASK;
         flags &= TLB_SLOW_FLAGS_MASK;
         if (flags) {
@@ -1047,6 +1082,9 @@ void tlb_set_page_full(CPUState *cpu, int mmu_idx,
     addr_page = addr & TARGET_PAGE_MASK;
     paddr_page = full->phys_addr & TARGET_PAGE_MASK;
 
+    /* Query security policy for this page */
+    full->extra.generic.security_flags = tlb_security_policy ? tlb_security_policy(cpu, addr_page) : 0;
+
     prot = full->prot;
     asidx = cpu_asidx_from_attrs(cpu, full->attrs);
     section = address_space_translate_for_iotlb(cpu, asidx, paddr_page,
@@ -1072,6 +1110,15 @@ void tlb_set_page_full(CPUState *cpu, int mmu_idx,
     } else {
         /* I/O does not; force the host address to NULL. */
         addend = 0;
+    }
+
+    full->extra.generic.shadow_addend = 0;
+    if (is_ram || is_romd) {
+        ram_addr_t offset;
+        RAMBlock *rb = qemu_ram_block_from_host((void *)addend, false, &offset);
+        if (rb && rb->shadow_host && rb->shadow_ratio > 0) {
+            full->extra.generic.shadow_addend = (uintptr_t)rb->shadow_host + (offset / rb->shadow_ratio) - (addr_page / rb->shadow_ratio);
+        }
     }
 
     write_flags = read_flags;
@@ -1665,6 +1712,10 @@ static bool mmu_lookup1(CPUState *cpu, MMULookupPageData *data, MemOp memop,
     full = &cpu->neg.tlb.d[mmu_idx].fulltlb[index];
     flags = tlb_addr & (TLB_FLAGS_MASK & ~TLB_FORCE_SLOW);
     flags |= full->slow_flags[access_type];
+
+    if (unlikely(full->extra.generic.security_flags && tlb_security_handler)) {
+        tlb_security_handler(cpu, addr, full->extra.generic.security_flags, access_type);
+    }
 
     if (likely(!maybe_resized)) {
         /* Alignment has not been checked by tlb_fill_align. */
@@ -2899,4 +2950,20 @@ vaddr cpu_pointer_wrap_notreached(CPUState *cs, int idx, vaddr res, vaddr base)
 vaddr cpu_pointer_wrap_uint32(CPUState *cs, int idx, vaddr res, vaddr base)
 {
     return (uint32_t)res;
+}
+
+uint64_t helper_shadow_ld(CPUArchState *env, uint64_t addr, uint32_t tag)
+{
+    /* Phase 3 fallback JIT compiler lowering */
+    return 0;
+}
+
+void helper_shadow_st(CPUArchState *env, uint64_t addr, uint64_t val, uint32_t tag)
+{
+    /* Phase 3 fallback JIT compiler lowering */
+}
+
+void helper_shadow_prop(CPUArchState *env, uint64_t addr, uint64_t val, uint32_t tag)
+{
+    /* Phase 3 fallback JIT compiler lowering */
 }
